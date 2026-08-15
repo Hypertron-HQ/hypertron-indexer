@@ -60,6 +60,28 @@ describe('parsePoolEvent', () => {
     ]);
   });
 
+  it('parses PrivateTransfer nullifiers vec into one NullifierSpent each', () => {
+    const out = parsePoolEvent('private_transfer', ['private_transfer'], {
+      nullifiers: [Buffer.alloc(32, 3), Buffer.alloc(32, 4)],
+      out_index_1: 1,
+      out_index_2: 2,
+      note_1: Buffer.from('aa', 'hex'),
+      note_2: Buffer.from('bb', 'hex'),
+    });
+    expect(out.map((x) => x.kind)).toEqual([
+      'NullifierSpent',
+      'NullifierSpent',
+      'NoteBlob',
+      'NoteBlob',
+    ]);
+    expect(out[0]).toMatchObject({ kind: 'NullifierSpent' });
+    expect(out[1]).toMatchObject({ kind: 'NullifierSpent' });
+    if (out[0].kind === 'NullifierSpent' && out[1].kind === 'NullifierSpent') {
+      expect(out[0].nullifier).toMatch(/^0x03/);
+      expect(out[1].nullifier).toMatch(/^0x04/);
+    }
+  });
+
   it('parses NullifierSpent', () => {
     const out = parsePoolEvent('NullifierSpent', ['NullifierSpent'], {
       nullifier: '0x' + 'ab'.repeat(32),

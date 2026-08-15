@@ -66,8 +66,9 @@ export function parsePoolEvent(
     }
     case 'privatetransfer': {
       const out: ParsedEvent[] = [];
-      const nf = to0x(v.nullifier);
-      out.push({ kind: 'NullifierSpent', nullifier: nf });
+      for (const nf of collectNullifiers(v)) {
+        out.push({ kind: 'NullifierSpent', nullifier: nf });
+      }
       const i1 = num(v.out_index_1 ?? v.outIndex1);
       const i2 = num(v.out_index_2 ?? v.outIndex2);
       out.push({
@@ -124,6 +125,20 @@ function num(v: unknown): number {
   if (typeof v === 'bigint') return Number(v);
   if (typeof v === 'string') return parseInt(v, 10);
   throw new Error(`Expected number, got ${typeof v}`);
+}
+
+function collectNullifiers(v: Record<string, unknown>): string[] {
+  const raw = v.nullifiers;
+  if (Array.isArray(raw)) {
+    return raw.map(to0x);
+  }
+  if (raw != null) {
+    return [to0x(raw)];
+  }
+  if (v.nullifier != null) {
+    return [to0x(v.nullifier)];
+  }
+  throw new Error('PrivateTransfer missing nullifier(s)');
 }
 
 function to0x(v: unknown): string {
