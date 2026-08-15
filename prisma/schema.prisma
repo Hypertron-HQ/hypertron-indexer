@@ -1,0 +1,56 @@
+// Hypertron indexer — privacy pool leaf / blob / nullifier store
+// Database: hypertron_indexer (indexer_svc user)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Commitment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  network   String
+  leafIndex Int
+  leaf      String // 0x hex
+  rootAfter String
+  ledger    Int
+  txHash    String
+  createdAt DateTime @default(now())
+
+  @@unique([network, leafIndex])
+  @@unique([network, leaf])
+  @@map("commitments")
+}
+
+model NoteBlob {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  network   String
+  leafIndex Int?
+  blob      String // ciphertext hex — we cannot read it
+  ledger    Int
+  createdAt DateTime @default(now())
+
+  @@index([network, ledger])
+  @@map("note_blobs")
+}
+
+model SpentNullifier {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  network   String
+  nullifier String
+  ledger    Int
+
+  @@unique([network, nullifier])
+  @@map("nullifiers")
+}
+
+model IndexerCursor {
+  id         String   @id @map("_id") // = network
+  lastLedger Int
+  updatedAt  DateTime @updatedAt
+
+  @@map("indexer_cursor")
+}
