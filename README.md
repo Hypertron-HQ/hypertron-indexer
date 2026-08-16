@@ -59,7 +59,7 @@ private `red-da10qfm1egvs739nocgg` hostname to resolve.
 If configuring the service manually instead of using the Blueprint:
 
 ```text
-Build Command: npm ci && npm run build
+Build Command: npm ci --include=dev && npm run build
 Start Command: npm run start:prod
 Health Check Path: /health
 ```
