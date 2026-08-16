@@ -44,7 +44,12 @@ export class IngestService {
         this.logger.error(
           {
             network: network.network,
-            err: err instanceof Error ? err.message : String(err),
+            err:
+              err instanceof Error
+                ? err.message
+                : JSON.stringify(err, (_k, v) =>
+                    typeof v === 'bigint' ? v.toString() : v,
+                  ),
           },
           'Ingest tick failed',
         );
@@ -56,48 +61,77 @@ export class IngestService {
     network: NetworkContracts,
     startLedgerFallback: number,
   ): Promise<void> {
+    const latest = await this.soroban.getLatestLedger();
+    // Public testnet RPC drops history older than ~1 day. Starting further
+    // back returns an empty page (and we used to jump the cursor to the tip).
+    const retentionFloor = Math.max(1, latest - 16_000);
+
     const cursor = await this.prisma.indexerCursor.findUnique({
       where: { id: network.network },
     });
-    const lastLedger = cursor?.lastLedger ?? startLedgerFallback - 1;
-    // First run: start at INDEXER_START_LEDGER; thereafter lastLedger+1
-    const from = cursor ? cursor.lastLedger + 1 : startLedgerFallback;
-
-    const { events, latestLedger } = await this.soroban.getEvents({
-      startLedger: from,
-      contractIds: [network.commitment, network.pool, network.nullifier],
-      limit: 200,
+    const agg = await this.prisma.commitment.aggregate({
+      where: { network: network.network },
+      _max: { leafIndex: true },
     });
+    let nextIndex = (agg._max.leafIndex ?? -1) + 1;
+
+    let from = cursor ? cursor.lastLedger + 1 : startLedgerFallback;
+    if (!cursor || nextIndex === 0) {
+      from = Math.max(startLedgerFallback, retentionFloor);
+    } else if (from < retentionFloor) {
+      from = retentionFloor;
+    }
+
+    const { events, latestLedger } = await this.soroban.getEventsSince(from, [
+      network.commitment,
+      network.pool,
+      network.nullifier,
+    ]);
 
     if (events.length === 0) {
-      if (latestLedger > lastLedger) {
+      let chainSize = 0;
+      try {
+        chainSize = await this.soroban.readCommitmentSize(network.commitment);
+      } catch {
+        chainSize = 0;
+      }
+      if (chainSize > nextIndex) {
+        this.logger.warn(
+          { network: network.network, from, chainSize, nextIndex },
+          'RPC returned no events but the tree has leaves — not advancing cursor',
+        );
+        return;
+      }
+      if (latestLedger > (cursor?.lastLedger ?? from - 1)) {
         await this.setCursor(network.network, latestLedger);
       }
       return;
     }
 
+    events.sort((a, b) => a.ledger - b.ledger || a.txHash.localeCompare(b.txHash));
+
     let touchedCommitments = false;
-    const expectedNext = await this.prisma.commitment.count({
-      where: { network: network.network },
-    });
-    let nextIndex = expectedNext;
+    let pausedForGap = false;
 
     for (const ev of events) {
       const parsed = parsePoolEvent(ev.name, ev.topics, ev.value);
       for (const item of parsed) {
         if (item.kind === 'CommitInserted') {
+          if (item.index < nextIndex) {
+            continue;
+          }
           if (item.index !== nextIndex) {
-            this.logger.error(
+            this.logger.warn(
               {
                 network: network.network,
                 expected: nextIndex,
                 got: item.index,
+                ledger: ev.ledger,
               },
-              'CommitInserted contiguity break — pausing ingest',
+              'CommitInserted gap — waiting for earlier leaves, not pausing',
             );
-            await this.redis.setHealthy(network.network, false);
-            this.ingestEnabled.set(network.network, false);
-            return;
+            pausedForGap = true;
+            break;
           }
           await this.prisma.commitment.upsert({
             where: {
@@ -148,8 +182,8 @@ export class IngestService {
             update: { ledger: ev.ledger },
           });
         }
-        // Deposited / Unshielded: nullifier already handled; amounts not stored in v1
       }
+      if (pausedForGap) break;
     }
 
     if (touchedCommitments) {
@@ -166,9 +200,15 @@ export class IngestService {
         this.ingestEnabled.set(network.network, false);
         return;
       }
+      await this.redis.setHealthy(network.network, true);
     }
 
-    await this.setCursor(network.network, latestLedger);
+    if (pausedForGap) {
+      return;
+    }
+
+    const maxEventLedger = events.reduce((m, e) => Math.max(m, e.ledger), from);
+    await this.setCursor(network.network, Math.max(maxEventLedger, latestLedger));
     this.logger.debug(
       {
         network: network.network,

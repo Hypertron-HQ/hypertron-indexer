@@ -49,21 +49,73 @@ export class SorobanService {
     startLedger: number;
     contractIds: string[];
     limit?: number;
-  }): Promise<{ events: RawPoolEvent[]; latestLedger: number }> {
+    cursor?: string;
+  }): Promise<{ events: RawPoolEvent[]; latestLedger: number; cursor?: string }> {
     const server = this.getServer();
-    const res = await server.getEvents({
-      startLedger: input.startLedger,
-      filters: [
-        {
-          type: 'contract',
-          contractIds: input.contractIds,
-        },
-      ],
-      limit: input.limit ?? 200,
-    });
+    const filters = [
+      {
+        type: 'contract' as const,
+        contractIds: input.contractIds,
+      },
+    ];
+    const res = input.cursor
+      ? await server.getEvents({
+          cursor: input.cursor,
+          filters,
+          limit: input.limit ?? 200,
+        })
+      : await server.getEvents({
+          startLedger: input.startLedger,
+          filters,
+          limit: input.limit ?? 200,
+        });
 
+    const events = this.decodeEvents(res.events ?? []);
+    return {
+      events,
+      latestLedger: res.latestLedger ?? input.startLedger,
+      cursor: res.cursor,
+    };
+  }
+
+  /**
+   * Walk getEvents pages so a single ingest tick does not skip early
+   * CommitInserted rows when the window has more than `limit` events.
+   */
+  async getEventsSince(
+    startLedger: number,
+    contractIds: string[],
+  ): Promise<{ events: RawPoolEvent[]; latestLedger: number }> {
+    const all: RawPoolEvent[] = [];
+    let cursor: string | undefined;
+    let latestLedger = startLedger;
+    let lastCursor: string | undefined;
+
+    for (let page = 0; page < 25; page++) {
+      const res = await this.getEvents({
+        startLedger,
+        contractIds,
+        limit: 200,
+        cursor,
+      });
+      latestLedger = res.latestLedger;
+      all.push(...res.events);
+      if (!res.events.length || !res.cursor || res.cursor === lastCursor) {
+        break;
+      }
+      if (res.events.length < 200) break;
+      lastCursor = res.cursor;
+      cursor = res.cursor;
+    }
+
+    return { events: all, latestLedger };
+  }
+
+  private decodeEvents(
+    raw: NonNullable<rpc.Api.GetEventsResponse['events']>,
+  ): RawPoolEvent[] {
     const events: RawPoolEvent[] = [];
-    for (const ev of res.events ?? []) {
+    for (const ev of raw) {
       try {
         const topicsNative = (ev.topic ?? []).map((t) => {
           try {
@@ -98,11 +150,7 @@ export class SorobanService {
         );
       }
     }
-
-    return {
-      events,
-      latestLedger: res.latestLedger ?? input.startLedger,
-    };
+    return events;
   }
 
   /** Read commitment.root() via simulateTransaction. */
