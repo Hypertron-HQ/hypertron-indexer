@@ -60,6 +60,6 @@ If configuring the service manually instead of using the Blueprint:
 
 ```text
 Build Command: npm ci --include=dev && npm run build
-Start Command: npm run start:prod
+Start Command: npm start
 Health Check Path: /health
 ```

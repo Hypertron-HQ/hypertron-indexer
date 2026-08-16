@@ -4,7 +4,7 @@ services:
     runtime: node
     region: oregon
     buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm run start:prod
+    startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
