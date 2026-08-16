@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: hypertron-indexer
+    runtime: node
+    region: oregon
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        value: redis://red-da10qfm1egvs739nocgg:6379
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SOROBAN_RPC_URL
+        value: https://soroban-testnet.stellar.org
+      - key: DEPLOYMENTS_PATH
+        value: ./deployments/testnet.json
+      - key: INDEXER_START_LEDGER
+        value: "4168760"
+      - key: DISABLE_INGEST
+        value: "false"
+      - key: MERKLE_WASM_DIR
+        value: ""

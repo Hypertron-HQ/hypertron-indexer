@@ -41,3 +41,25 @@ npm run probe:events
 ```
 
 See [docs/event-layout.md](docs/event-layout.md).
+
+## Render
+
+`render.yaml` contains the Node 20 build/start commands, Oregon region, health
+check, current testnet deployment manifest, and the private Render Valkey URL.
+Create the web service from that Blueprint, then enter the two dashboard-only
+values:
+
+- `DATABASE_URL`: Atlas URI for the dedicated `hypertron_indexer` database.
+- `CORS_ORIGINS`: comma-separated frontend origins, without trailing slashes.
+
+The service uses Render's injected `PORT`; do not add a fixed production port.
+The Valkey service and web service must remain in the same Render region for the
+private `red-da10qfm1egvs739nocgg` hostname to resolve.
+
+If configuring the service manually instead of using the Blueprint:
+
+```text
+Build Command: npm ci && npm run build
+Start Command: npm run start:prod
+Health Check Path: /health
+```
