@@ -193,11 +193,18 @@ export class IngestService {
         network.commitment,
       );
       if (!verify.ok) {
+        const behind =
+          typeof verify.contractSize === 'number' &&
+          verify.contractSize > verify.leafCount;
         this.logger.error(
-          { network: network.network, error: verify.error },
-          'Root verification failed — pausing ingest',
+          { network: network.network, error: verify.error, behind },
+          behind
+            ? 'Root verification failed — tree is behind chain, keeping ingest on'
+            : 'Root verification failed — pausing ingest',
         );
-        this.ingestEnabled.set(network.network, false);
+        if (!behind) {
+          this.ingestEnabled.set(network.network, false);
+        }
         return;
       }
       await this.redis.setHealthy(network.network, true);

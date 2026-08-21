@@ -100,10 +100,15 @@ export class SorobanService {
       });
       latestLedger = res.latestLedger;
       all.push(...res.events);
-      if (!res.events.length || !res.cursor || res.cursor === lastCursor) {
+      // Public RPC often returns tiny pages (2 events) with a continuation
+      // cursor. Stopping at `length < 200` skips later CommitInserted rows
+      // and leaves the tree one leaf behind the contract.
+      if (!res.cursor || res.cursor === lastCursor) {
         break;
       }
-      if (res.events.length < 200) break;
+      if (!res.events.length) {
+        break;
+      }
       lastCursor = res.cursor;
       cursor = res.cursor;
     }
