@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -40,13 +39,6 @@ export class PoolService {
   async getLeaves(network: string, since = 0) {
     this.assertNetwork(network);
     const healthy = await this.redis.isHealthy(network);
-    if (!healthy) {
-      throw new ServiceUnavailableException({
-        error: 'Indexer unhealthy — root verification failed',
-        healthy: false,
-      });
-    }
-
     const leaves = await this.merkle.loadOrderedLeaves(network);
     const start = Math.max(0, Math.floor(since));
     const slice = leaves.slice(start);
@@ -66,6 +58,7 @@ export class PoolService {
       size: leaves.length,
       root,
       since: start,
+      healthy,
     };
   }
 
